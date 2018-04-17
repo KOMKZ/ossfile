@@ -1,4 +1,4 @@
-package osssrv
+package ossfile
 
 import (
 	"fmt"
