@@ -7,24 +7,69 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"encoding/json"
 )
 
 type Server struct {
 	Addr string
 	Router *mux.Router
+	Req *Request
 	Debug bool
 	RuntimeDir string
 }
 
-func (srv Server) ServeHTTP(w http.ResponseWriter, req *http.Request)  {
+type Request struct {
+	*http.Request
+	curContType string
+}
+
+func (r *Request)GetContType() (conType string){
+	if r.curContType != "" {
+		return r.curContType
+	}
+	conType = r.Header.Get("Content-Type")
+	log.Println(conType)
+	r.curContType = conType
+	return conType
+}
+
+
+
+func (r *Request)IsJsonForm() bool{
+	if t := r.GetContType(); t != "application/json" {
+		return false
+	}else{
+		return true
+	}
+}
+
+func (r *Request)IsMultipartForm() bool{
+	if t := r.GetContType(); t != "multipart/form-data" {
+		return false
+	}else{
+		return true
+	}
+}
+
+func (r *Request)ParseJsonForm(jsonData interface{}) error{
+	err := json.NewDecoder(r.Body).Decode(jsonData)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func (srv *Server) ServeHTTP(w http.ResponseWriter, req *http.Request)  {
 	if srv.Debug {
 		log.Printf("%s %s", req.Method, req.URL.Path)
 	}
+	srv.Req = &Request{req, ""}
 	srv.Router.ServeHTTP(w, req)
 }
 
 
-func (srv Server) init() error{
+func (srv *Server) init() error{
 	if srv.RuntimeDir == "" {
 		return fmt.Errorf("Server RumtimeDir can't not be empty")
 	}
@@ -32,18 +77,19 @@ func (srv Server) init() error{
 	if !os.IsExist(err) {
 		return err
 	}
+
 	return nil
 }
 
-func (srv Server) run(){
+func (srv *Server) run(){
 
 	err := srv.init()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	api := FileApi{srv: &srv}
-	siteApi := SiteApi{srv: &srv}
+	api := FileApi{srv: srv}
+	siteApi := SiteApi{srv: srv}
 
 	srv.Router.HandleFunc("/", siteApi.Index).Methods("GET")
 	srv.Router.HandleFunc("/files/{query_id}/info", api.GetFileInfo).Methods("GET")

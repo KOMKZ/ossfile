@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"encoding/json"
 	"log"
-	"strings"
 	"fmt"
 	"crypto/md5"
 	"io"
@@ -25,9 +24,14 @@ const (
 
 type resData struct {
 	Code string `json:"code"`
-	Message error `json:"message"`
+	Message string `json:"message"`
 	Data interface{} `json:"data"`
 }
+
+
+
+type uploadParams map[string]string
+
 
 
 
@@ -37,7 +41,7 @@ type Api struct {
 
 
 func (api Api) error(res http.ResponseWriter, message error, code string)  {
-	d := resData{code, message, nil}
+	d := resData{code, fmt.Sprintf("%s", message), nil}
 	r, err := json.Marshal(d)
 	if err != nil {
 		res.WriteHeader(http.StatusInternalServerError)
@@ -54,7 +58,7 @@ func (api Api) innerError(res http.ResponseWriter){
 }
 
 func (api Api) succ(res http.ResponseWriter, data interface{}){
-	d := resData{NO_ERROR, nil, data}
+	d := resData{NO_ERROR, "", data}
 	r, err := json.Marshal(d)
 	if err != nil {
 		res.WriteHeader(http.StatusInternalServerError)
@@ -82,29 +86,22 @@ func (api SiteApi) Index(res http.ResponseWriter, req *http.Request)  {
 
 // 上传一个文件
 func (api FileApi) UploadFile(res http.ResponseWriter, req *http.Request)  {
-	ct, ok := req.Header["Content-Type"]
-	if !ok {
-		api.error(res, fmt.Errorf("can't not detect content type of request header"), DEFAULT_ERROR)
-		return
-	}
-	conType := ""
-	for _, ctv := range ct {
-		if strings.ContainsAny(ctv, "multipart/form-data"){
-			conType = "multipart/form-data"
-			break
-		}
-	}
-	if conType == "" {
-		api.error(res, fmt.Errorf("can't not detect content type of request header"), DEFAULT_ERROR)
-		return
-	}
-	req.ParseForm()
-	if conType == "multipart/form-data" {
-		req.ParseMultipartForm(32 << 30)
-		tmp, fh, err := req.FormFile("file")
-		if err != nil{
-			log.Println(err)
+	sReq := api.srv.Req
+	file := File{}
+	if !sReq.IsJsonForm() {
+		err := sReq.ParseMultipartForm(32 << 30)
+		if err != nil {
 			api.error(res, err, DEFAULT_ERROR)
+			return
+		}
+		tmp, fh, err := sReq.FormFile("file")
+		if err == http.ErrMissingFile {
+			api.error(res, fmt.Errorf("missing file"), DEFAULT_ERROR)
+			return
+		}
+		if err != nil{
+			api.error(res, err, DEFAULT_ERROR)
+			log.Panicln(err)
 			return
 		}
 		defer tmp.Close()
@@ -115,13 +112,10 @@ func (api FileApi) UploadFile(res http.ResponseWriter, req *http.Request)  {
 			api.error(res, err, DEFAULT_ERROR)
 			return
 		}
-		file := File{
-			File_hash: fmt.Sprintf("%x", h.Sum(nil)),
-			File_ext: filepath.Ext(fh.Filename),
-			File_trace: 0,
-		}
-		api.succ(res, file)
-		return
+		file.File_hash = fmt.Sprintf("%x", h.Sum(nil))
+		file.File_ext = filepath.Ext(fh.Filename)
+		file.File_trace = 0
+
 		/*
 		测试保存
 		tmpPath := filepath.Join(api.srv.RuntimeDir, strhelper.RandStringRunes(20) + filepath.Ext(fh.Filename))
@@ -134,6 +128,17 @@ func (api FileApi) UploadFile(res http.ResponseWriter, req *http.Request)  {
 		io.Copy(tmpFile, file)
 		log.Printf("uploaded file save in: %s\n", tmpPath)
 		*/
+	}
+	params := uploadParams{}
+
+	err := sReq.ParseJsonForm(&params)
+	if err != nil {
+		log.Println(err)
+		api.error(res, err, DEFAULT_ERROR)
+		return
+	}
+	for i,v := range params {
+		log.Printf("%s %s", i, v)
 	}
 }
 

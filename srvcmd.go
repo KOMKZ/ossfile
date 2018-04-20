@@ -32,12 +32,12 @@ func (c *cmd) Run()  {
 
 func (c *cmd) Install(){
 	c.Register("run-server", func() {
-		Server{
+		(&Server{
 			Addr : c.Flags.Addr,
 			Router: mux.NewRouter(),
 			Debug: bool(c.Flags.Debug),
 			RuntimeDir: "/home/master/tmp/go_srv",
-		}.run()
+		}).run()
 	})
 	c.Register("install", func() {
 		Migration{
